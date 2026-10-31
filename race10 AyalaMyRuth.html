@@ -1,0 +1,1418 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Race 3D</title>
+<style>
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; overflow:hidden; background:#000;
+               font-family: system-ui, Arial, sans-serif; color:#fff; }
+  canvas { display:block; }
+  header { position:fixed; top:0; left:0; right:0; display:flex; gap:12px; align-items:center;
+           padding:8px 14px; z-index:5; background:rgba(0,0,0,.45); flex-wrap:wrap; }
+  header h1 { font-size:17px; margin:0; margin-right:auto; }
+  #status { font-size:13px; color:#d6dbe8; }
+  button, .btnlike { font:inherit; padding:6px 14px; border-radius:8px; border:0; cursor:pointer; background:#fff; color:#111; }
+  .btnlike { display:inline-block; }
+
+  .hud { position:fixed; left:16px; z-index:3; text-shadow:0 2px 4px rgba(0,0,0,.7); }
+  #hud1 { top:52px; }
+  #hud2 { top:calc(50% + 14px); }
+  .hud .name { font-size:20px; font-weight:800; }
+  .hud .info { font-size:15px; }
+  .hud .extra { font-size:15px; font-weight:800; color:#ffe55c; height:18px; }
+
+  .pop { position:fixed; left:50%; transform:translateX(-50%); z-index:3; font-size:36px; font-weight:800;
+         text-shadow:0 3px 6px rgba(0,0,0,.7); opacity:0; transition:opacity .5s; pointer-events:none; }
+  #pop1 { top:18%; }
+  #pop2 { top:68%; }
+  .pop.show { opacity:1; transition:none; }
+
+  #progress { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); z-index:3;
+              width:min(640px, 80vw); height:22px; background:rgba(0,0,0,.6); border-radius:11px; border:2px solid #fff; }
+  #progress .dot { position:absolute; top:50%; width:18px; height:18px; border-radius:50%;
+                   transform:translate(-50%,-50%); border:2px solid #fff; }
+  #dot1 { background:#ff7a59; }
+  #dot2 { background:#3fb6ff; }
+  #progress .flag { position:absolute; right:-28px; top:-4px; font-size:20px; }
+  #split { position:fixed; left:0; right:0; top:50%; height:4px; margin-top:-2px; background:#111; z-index:2; }
+
+  /* During the winner celebration: one big screen, no race HUD */
+  body.celebrate .hud, body.celebrate #progress, body.celebrate #split, body.celebrate .pop { display:none; }
+  #winBanner { position:fixed; left:0; right:0; top:12%; text-align:center; z-index:3; font-size:clamp(40px, 8vw, 96px);
+               font-weight:900; text-shadow:0 4px 0 rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.5);
+               opacity:0; transform:scale(.5); transition:opacity .6s, transform .6s cubic-bezier(.2,1.6,.4,1); pointer-events:none; }
+  body.celebrate #winBanner { opacity:1; transform:scale(1); }
+
+  #debug { position:fixed; right:12px; bottom:12px; z-index:3; background:rgba(0,0,0,.6); border-radius:10px;
+           padding:8px 12px; font: 12px ui-monospace, Consolas, monospace; line-height:1.6; }
+  .lamp { display:inline-block; width:26px; height:22px; line-height:22px; text-align:center; border-radius:6px;
+          margin-right:4px; background:#333; font-weight:800; }
+  .lamp.on { background:#2ecc71; color:#000; }
+  .tilt { display:inline-block; width:60px; height:8px; background:#333; border-radius:4px; position:relative; vertical-align:middle; margin-right:6px; }
+  .tilt i { position:absolute; top:-2px; width:6px; height:12px; background:#ffe55c; border-radius:2px; left:27px; }
+
+  #overlay { position:fixed; inset:0; z-index:4; display:flex; flex-direction:column; align-items:center;
+             justify-content:center; text-align:center; background:rgba(0,0,0,.65); padding:16px; }
+  #overlay.hidden { display:none; }
+  #overlay.end { background:linear-gradient(transparent 45%, rgba(0,0,0,.75)); justify-content:flex-end; padding-bottom:40px; }
+  /* Character select screen: no dark cover, so you can see your character */
+  #overlay.select { background:none; pointer-events:none; }
+  body.selecting .hud, body.selecting #progress { display:none; }
+  .seltitle { position:fixed; left:0; right:0; top:52px; text-align:center; font-size:26px; font-weight:900;
+              text-shadow:0 3px 8px rgba(0,0,0,.6); }
+  .selbox { position:fixed; left:50%; transform:translateX(-50%); text-align:center; background:rgba(0,0,0,.6);
+            padding:10px 26px; border-radius:16px; border:3px solid #fff; min-width:300px; }
+  .selbox.p1 { top:88px; }
+  .selbox.p2 { top:calc(50% + 12px); }
+  .selbox .row { font-size:24px; letter-spacing:4px; margin-top:2px; }
+  .selbox .row span { opacity:.45; }
+  .selbox .row span.on { opacity:1; font-size:32px; }
+  .selbox .who { font-size:15px; font-weight:800; opacity:.9; }
+  .selbox .char { font-size:34px; font-weight:900; margin:2px 0; }
+  .selbox .char .arrow { opacity:.6; font-size:26px; margin:0 12px; }
+  .selbox .hint { font-size:14px; opacity:.85; }
+  .selbox.done { background:#2ecc71; color:#000; border-color:#2ecc71; }
+  #overlay h2 { font-size:54px; margin:0 0 14px; }
+  #overlay p { font-size:19px; margin:5px 0; }
+  #overlay .ready { display:flex; gap:24px; margin-top:18px; }
+  #overlay .ready div { padding:12px 20px; border-radius:12px; border:3px solid #fff; font-size:20px; font-weight:800; min-width:200px; }
+  #overlay .ready .yes { background:#2ecc71; color:#000; border-color:#2ecc71; }
+  #flash1, #flash2 { position:fixed; left:0; right:0; height:50%; background:#ff2a2a; opacity:0; z-index:2;
+                     pointer-events:none; transition:opacity .4s; }
+  #flash1 { top:0; }
+  #flash2 { top:50%; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Race 3D</h1>
+  <span id="status">Click Connect for each micro:bit · a player without a micro:bit plays on the keyboard automatically</span>
+  <button id="soundBtn" title="Sound on / off (key M)">🔊 Sound</button>
+  <label class="btnlike" title="Play your own music file instead">🎵 My music<input type="file" id="musicFile" accept="audio/*" hidden></label>
+  <button id="connectBtn">Connect micro:bit</button>
+</header>
+
+<div class="hud" id="hud1"></div>
+<div class="hud" id="hud2"></div>
+<div class="pop" id="pop1"></div>
+<div class="pop" id="pop2"></div>
+<div id="flash1"></div><div id="flash2"></div>
+<div id="split"></div>
+<div id="progress"><div class="dot" id="dot1"></div><div class="dot" id="dot2"></div><div class="flag">🏁</div></div>
+<div id="winBanner"></div>
+<div id="debug">
+  <div><span class="lamp" id="lamp1A">A</span><span class="lamp" id="lamp1B">B</span><span class="tilt"><i id="tilt1"></i></span><span id="dbg1">P1: keyboard</span></div>
+  <div><span class="lamp" id="lamp2A">A</span><span class="lamp" id="lamp2B">B</span><span class="tilt"><i id="tilt2"></i></span><span id="dbg2">P2: keyboard</span></div>
+  <div id="dbgFps">FPS: -</div>
+</div>
+<div id="overlay"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// =====================================================
+//                     SETTINGS
+// =====================================================
+const TRACK = 1000;         // length of the race (meters)
+
+const BASE_SPEED = 12;      // running speed (meters per second)
+const AIR_SLOW = 0.85;      // you run a bit slower in the air (so jumping all the time doesn't pay)
+const OFFROAD_SLOW = 0.5;   // running on the grass = half speed
+const FALL_BARRIER = 1.0;   // seconds on the ground after hitting a barrier
+const FALL_ENEMY = 2.0;     // seconds on the ground after running into an enemy (one more second!)
+const BOOST_TIME = 1.5;     // shoot an enemy = speed boost for this long...
+const BOOST_MULT = 1.45;    // ...this much faster
+const COIN_BOOST = 0.8;     // a coin gives a shorter boost (seconds)
+
+// Steering by TILT (accelerometer)
+const MAX_TILT = 30;        // degrees of tilt = full steering
+const DEAD_ZONE = 4;        // small tilts are ignored (degrees)
+const STEER = 5;            // how fast you move sideways at full tilt (m/s)
+const DRIFT = 0.9;          // how strongly curves push you outward
+const INVERT_TILT = false;  // if steering feels reversed, change to true
+const ROAD_HALF = 3;        // the road is 6 m wide
+
+const GRAVITY = 15;
+const JUMP_V = 7;           // jump power
+const AIR_JUMP = 0.8;       // press A again in the air = jump again (0 = no air jumps)
+const MAX_HEIGHT = 3;
+const INPUT_LAG = 0.06;     // makes up for the USB delay
+const BULLET_V = 70;
+
+const MB_VERSION = "6";     // must match VERSION in the MakeCode code
+const LANE_X = { 1: -400, 2: 400 }; // each player has her own world, far apart
+const CAM_Y = 3.4, CAM_Z = 6.5;
+const SHIRT = { 1: 0xff7a59, 2: 0x3fb6ff };
+const SHIRT_CSS = { 1: "#ff7a59", 2: "#3fb6ff" };
+
+// The shape of the road: how far left/right the middle of the road is at distance d
+// (straight at the start, then winding curves)
+function center(d) {
+  const k = Math.min(1, Math.max(0, (d - 50) / 120));
+  return k * (22 * Math.sin(d / 110) + 9 * Math.sin(d / 43 + 1.3));
+}
+const slope = d => center(d + 0.5) - center(d - 0.5);                 // direction of the road
+const curve = d => center(d + 1) - 2 * center(d) + center(d - 1);      // how sharp the turn is
+
+// =====================================================
+//                    3D SCENE
+// =====================================================
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+renderer.setPixelRatio(1);
+renderer.setSize(innerWidth, innerHeight);
+renderer.setScissorTest(true);
+document.body.prepend(renderer.domElement);
+addEventListener("resize", () => renderer.setSize(innerWidth, innerHeight));
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x8fbbe6);
+scene.fog = new THREE.Fog(0x8fbbe6, 30, 120);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x4a5a40, 0.9));
+const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+sun.position.set(5, 12, 6);
+scene.add(sun);
+
+const mat = color => new THREE.MeshLambertMaterial({ color });
+const box = (w, h, d, color) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color));
+function flat(w, l, color, y) {             // a flat piece lying on the ground
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, l), mat(color));
+  m.rotation.x = -Math.PI / 2; m.position.y = y;
+  return m;
+}
+
+const grass = new THREE.Mesh(new THREE.PlaneGeometry(1400, 600), mat(0x6fae5a));
+grass.rotation.x = -Math.PI / 2; grass.position.z = -200;
+scene.add(grass);
+
+// =====================================================
+//     EACH PLAYER: her own winding road, runner and camera
+// =====================================================
+const SEG = 3, NSEG = 60;   // the road is drawn as 60 pieces of 3 m (180 m ahead)
+
+// =====================================================
+//   SOUND: original background music + sound effects, made live in the browser (Web Audio)
+//   No sound files needed. Browsers only allow sound after the first click or key press,
+//   so the sound starts on the first click / key / "Connect".
+// =====================================================
+const Sound = (() => {
+  const AC = typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext);
+  let ctx = null, master, musicGain, sfxGain, crowdGain, noiseBuf = null;
+  let enabled = true, customAudio = null;
+  let step = 0, nextTime = 0, timer = null;
+  const BPM = 132, STEP = 60 / BPM / 4;            // 16th notes
+
+  // A–F–C–G chords (a happy-epic loop), each one bar long
+  const BASS = [55, 43.65, 65.41, 49];             // A1 F1 C2 G1
+  const CHORDS = [[220, 261.6, 329.6], [174.6, 220, 261.6], [261.6, 329.6, 392], [196, 246.9, 293.7]];
+  const ARP = [0, 1, 2, 1, 0, 2, 1, 2, 0, 1, 2, 1, 2, 1, 0, 2];
+
+  function init() {
+    if (!AC) return;
+    if (ctx) { if (ctx.state === "suspended") ctx.resume(); return; }
+    ctx = new AC();
+    master = ctx.createGain(); master.gain.value = enabled ? 0.8 : 0; master.connect(ctx.destination);
+    musicGain = ctx.createGain(); musicGain.gain.value = 0.32; musicGain.connect(master);
+    sfxGain = ctx.createGain(); sfxGain.gain.value = 0.55; sfxGain.connect(master);
+    noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    // Crowd murmur in the background (filtered noise)
+    const crowd = ctx.createBufferSource(); crowd.buffer = noiseBuf; crowd.loop = true;
+    const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 700; bp.Q.value = 0.6;
+    crowdGain = ctx.createGain(); crowdGain.gain.value = 0;
+    crowd.connect(bp); bp.connect(crowdGain); crowdGain.connect(master); crowd.start();
+    nextTime = ctx.currentTime + 0.1;
+    timer = setInterval(schedule, 25);
+  }
+
+  // ---- little instruments ----
+  function tone(freq, t, dur, type, vol, dest, freqEnd) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    if (freqEnd) o.frequency.exponentialRampToValueAtTime(freqEnd, t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(dest || sfxGain);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  function noise(t, dur, vol, filterType, freq, dest) {
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf;
+    const f = ctx.createBiquadFilter(); f.type = filterType; f.frequency.value = freq;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(f); f.connect(g); g.connect(dest || sfxGain);
+    s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.02);
+  }
+  const kick = t => tone(150, t, 0.16, "sine", 0.9, musicGain, 42);
+  const snare = t => { noise(t, 0.14, 0.35, "highpass", 1500, musicGain); tone(190, t, 0.08, "triangle", 0.25, musicGain); };
+  const hat = (t, v) => noise(t, 0.035, v, "highpass", 7000, musicGain);
+
+  // ---- the music: plays one 16th note at a time, a little ahead of time ----
+  function schedule() {
+    if (!ctx || customAudio) return;
+    const full = state === "countdown" || state === "play" || state === "celebrate" || state === "over";
+    while (nextTime < ctx.currentTime + 0.12) {
+      const s = step % 16, bar = Math.floor(step / 16) % 4, t = nextTime;
+      if (full) {
+        if (s % 4 === 0) kick(t);
+        if (s === 4 || s === 12) snare(t);
+        hat(t, s % 2 ? 0.05 : 0.11);
+        tone(CHORDS[bar][ARP[s]] * 2, t, STEP * 0.9, "square", 0.045, musicGain);      // arpeggio
+      } else {
+        if (s === 0 || s === 8) kick(t);                                                // calmer on the menus
+        if (s % 4 === 2) hat(t, 0.06);
+        if (s % 2 === 0) tone(CHORDS[bar][ARP[s]] * 2, t, STEP * 1.6, "triangle", 0.06, musicGain);
+      }
+      if (s % 2 === 0) tone(BASS[bar] * (s % 4 === 2 ? 2 : 1), t, STEP * 1.8, "sawtooth", 0.08, musicGain); // bass
+      nextTime += STEP; step++;
+    }
+    if (crowdGain) crowdGain.gain.setTargetAtTime(state === "play" ? 0.05 : state === "celebrate" ? 0.12 : 0.015, ctx.currentTime, 0.3);
+  }
+
+  // ---- sound effects ----
+  const FX = {
+    jump:   t => tone(320, t, 0.14, "square", 0.18, null, 760),
+    shoot:  t => { tone(1000, t, 0.1, "sawtooth", 0.12, null, 180); noise(t, 0.06, 0.12, "highpass", 3000); },
+    fall:   t => { tone(420, t, 0.4, "sine", 0.35, null, 70); noise(t, 0.25, 0.3, "lowpass", 600); },
+    boost:  t => [523, 659, 784, 1047].forEach((f, i) => tone(f, t + i * 0.05, 0.12, "square", 0.12)),
+    coin:   t => { tone(988, t, 0.08, "square", 0.12); tone(1319, t + 0.07, 0.18, "square", 0.12); },
+    beep:   t => tone(523, t, 0.18, "square", 0.18),
+    go:     t => tone(1047, t, 0.45, "square", 0.2),
+    tick:   t => tone(700, t, 0.05, "square", 0.1),
+    choose: t => { tone(659, t, 0.1, "square", 0.14); tone(988, t + 0.09, 0.22, "square", 0.14); },
+    cheer:  t => { const s = ctx.createBufferSource(); s.buffer = noiseBuf;
+                   const f = ctx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = 1100; f.Q.value = 0.5;
+                   const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t);
+                   g.gain.exponentialRampToValueAtTime(0.5, t + 0.25); g.gain.exponentialRampToValueAtTime(0.0001, t + 2.5);
+                   s.connect(f); f.connect(g); g.connect(sfxGain); s.start(t); s.stop(t + 2.6); },
+    win:    t => [523, 659, 784, 1047, 784, 1047].forEach((f, i) => tone(f, t + i * 0.13, i === 5 ? 0.8 : 0.16, "square", 0.16)),
+    ovation: t => ovation(t),
+  };
+
+  // ---- OVATION: the whole stadium cheers for the winner (about 5 seconds) ----
+  function ovation(t) {
+    const LEN = 5;
+    // 1) The roar of the crowd: two layers of filtered noise that swell up and slowly fade
+    for (const [freq, vol] of [[850, 0.55], [2300, 0.22]]) {
+      const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
+      const f = ctx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = freq; f.Q.value = 0.7;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.4);       // the crowd jumps up
+      g.gain.setValueAtTime(vol, t + 2.5);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + LEN);    // ...and slowly calms down
+      s.connect(f); f.connect(g); g.connect(sfxGain);
+      s.start(t); s.stop(t + LEN + 0.1);
+    }
+    // 2) Clapping: lots of short claps at random moments
+    for (let i = 0; i < 140; i++) {
+      const ct = t + 0.2 + Math.random() * (LEN - 1);
+      noise(ct, 0.03 + Math.random() * 0.02, 0.06 + Math.random() * 0.14, "bandpass", 1000 + Math.random() * 1400);
+    }
+    // 3) "Hooray!" voices: rising "aaah" sounds from different people
+    for (let i = 0; i < 7; i++) {
+      const vt = t + Math.random() * 1.4;
+      const base = 180 + Math.random() * 170;
+      const o = ctx.createOscillator(); o.type = "sawtooth";
+      o.frequency.setValueAtTime(base, vt);
+      o.frequency.linearRampToValueAtTime(base * 1.35, vt + 0.35);   // voice goes up: "hoo-RAY!"
+      o.frequency.linearRampToValueAtTime(base * 1.2, vt + 0.9);
+      const f1 = ctx.createBiquadFilter(); f1.type = "bandpass"; f1.frequency.value = 750; f1.Q.value = 4;   // "aah" sound
+      const f2 = ctx.createBiquadFilter(); f2.type = "bandpass"; f2.frequency.value = 1200; f2.Q.value = 4;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, vt);
+      g.gain.exponentialRampToValueAtTime(0.09, vt + 0.12);
+      g.gain.exponentialRampToValueAtTime(0.0001, vt + 0.95);
+      o.connect(f1); o.connect(f2); f1.connect(g); f2.connect(g); g.connect(sfxGain);
+      o.start(vt); o.stop(vt + 1);
+    }
+    // 4) Whistles: "fweeee-oo!"
+    for (let i = 0; i < 4; i++) {
+      const wt = t + 0.3 + Math.random() * 2.5;
+      const o = ctx.createOscillator(); o.type = "sine";
+      o.frequency.setValueAtTime(1700, wt);
+      o.frequency.linearRampToValueAtTime(2700, wt + 0.25);
+      o.frequency.linearRampToValueAtTime(2100, wt + 0.5);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, wt);
+      g.gain.exponentialRampToValueAtTime(0.07, wt + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.0001, wt + 0.55);
+      o.connect(g); g.connect(sfxGain);
+      o.start(wt); o.stop(wt + 0.6);
+    }
+  }
+  function sfx(name) {
+    if (!ctx || !enabled || ctx.state !== "running") return;
+    FX[name](ctx.currentTime + 0.005);
+  }
+
+  function toggle() {
+    enabled = !enabled;
+    if (master) master.gain.setTargetAtTime(enabled ? 0.8 : 0, ctx.currentTime, 0.05);
+    if (customAudio) enabled ? customAudio.play() : customAudio.pause();
+    return enabled;
+  }
+
+  // Use your own music file instead of the built-in music
+  function useFile(file) {
+    init();
+    if (customAudio) customAudio.pause();
+    customAudio = new Audio(URL.createObjectURL(file));
+    customAudio.loop = true; customAudio.volume = 0.5;
+    if (enabled) customAudio.play();
+  }
+
+  return { init, sfx, toggle, useFile, running: () => !!ctx && ctx.state === "running" };
+})();
+
+// Sound starts on the first click or key press (browser rule)
+document.addEventListener("pointerdown", () => Sound.init());
+document.addEventListener("keydown", () => Sound.init());
+
+// =====================================================
+//   STANDS + CROWD: stepped stands (like a pyramid) along the track, full of cheering fans
+// =====================================================
+const STAND_COUNT = 10;     // stands on each side (they keep moving forward as you run)
+const STAND_GAP = 14;       // meters between stands
+const STAND_OFF = 8.5;      // distance from the middle of the road to the first step
+const TIERS = 4, TIER_W = 1.5, TIER_H = 0.55, STAND_LEN = 12.5, FANS_PER_ROW = 10;
+const FAN_SHIRTS = [0xe63946, 0xffd34d, 0x3fb6ff, 0x2ecc71, 0xb36bff, 0xff8c1a, 0xffffff, 0xff7aa8];
+const FAN_SKIN = [0xffd9b8, 0xe8b48a, 0xc68a5e, 0x8d5a3b, 0xf1c9a5];
+
+function buildStand() {
+  const g = new THREE.Group();
+  // Local x = away from the road, local z = along the road
+  for (let k = 0; k < TIERS; k++) {
+    const h = TIER_H * (k + 1);
+    const step = box(TIER_W, h, STAND_LEN, k % 2 ? 0x8d99a6 : 0x9eaab7);
+    step.position.set(k * TIER_W + TIER_W / 2, h / 2, 0);
+    const seats = box(TIER_W * 0.9, 0.06, STAND_LEN, k % 2 ? 0xd94f4f : 0x3a6fd9);
+    seats.position.set(k * TIER_W + TIER_W / 2, h + 0.03, 0);
+    g.add(step, seats);
+  }
+  // Flags on top
+  for (const fz of [-5, 0, 5]) {
+    const pole = box(0.06, 1.6, 0.06, 0xdddddd); pole.position.set(TIERS * TIER_W - 0.2, TIER_H * TIERS + 0.8, fz);
+    const flag = box(0.04, 0.45, 0.7, FAN_SHIRTS[Math.floor(Math.random() * FAN_SHIRTS.length)]);
+    flag.position.set(TIERS * TIER_W - 0.2, TIER_H * TIERS + 1.35, fz + 0.38);
+    g.add(pole, flag);
+  }
+
+  // The fans: drawn as "instanced" meshes = hundreds of people for the price of one object (fast!)
+  const count = TIERS * FANS_PER_ROW;
+  const bodies = new THREE.InstancedMesh(new THREE.BoxGeometry(0.42, 0.6, 0.32), new THREE.MeshLambertMaterial(), count);
+  const heads = new THREE.InstancedMesh(new THREE.SphereGeometry(0.17, 8, 6), new THREE.MeshLambertMaterial(), count);
+  const fans = [];
+  let i = 0;
+  for (let k = 0; k < TIERS; k++) {
+    for (let j = 0; j < FANS_PER_ROW; j++) {
+      fans.push({ x: k * TIER_W + TIER_W / 2 + (Math.random() - 0.5) * 0.4,
+                  y: TIER_H * (k + 1),
+                  z: -STAND_LEN / 2 + 0.6 + j * (STAND_LEN - 1.2) / (FANS_PER_ROW - 1) + (Math.random() - 0.5) * 0.3,
+                  speed: 6 + Math.random() * 5, phase: Math.random() * 6 });
+      bodies.setColorAt(i, new THREE.Color(FAN_SHIRTS[Math.floor(Math.random() * FAN_SHIRTS.length)]));
+      heads.setColorAt(i, new THREE.Color(FAN_SKIN[Math.floor(Math.random() * FAN_SKIN.length)]));
+      i++;
+    }
+  }
+  g.add(bodies, heads);
+  g.userData = { bodies, heads, fans };
+  scene.add(g);
+  return g;
+}
+
+// Fans jump and cheer: a little all the time, a lot when a runner is close (or someone wins)
+const fanDummy = new THREE.Object3D();
+function cheer(stand, t, amp) {
+  const u = stand.userData;
+  for (let i = 0; i < u.fans.length; i++) {
+    const f = u.fans[i];
+    const jump = Math.abs(Math.sin(t * f.speed + f.phase)) * amp;
+    fanDummy.position.set(f.x, f.y + 0.3 + jump, f.z);
+    fanDummy.updateMatrix();
+    u.bodies.setMatrixAt(i, fanDummy.matrix);
+    fanDummy.position.y = f.y + 0.77 + jump;
+    fanDummy.updateMatrix();
+    u.heads.setMatrixAt(i, fanDummy.matrix);
+  }
+  u.bodies.instanceMatrix.needsUpdate = true;
+  u.heads.instanceMatrix.needsUpdate = true;
+}
+
+function buildWorld(x) {
+  const segs = [];
+  for (let i = 0; i < NSEG; i++) {
+    const g = new THREE.Group();
+    g.add(flat(6.2, SEG + 0.15, 0x3b3f47, 0.01));
+    const eL = flat(0.15, SEG + 0.15, 0xffffff, 0.02); eL.position.x = -3.05;
+    const eR = flat(0.15, SEG + 0.15, 0xffffff, 0.02); eR.position.x = 3.05;
+    const stripe = flat(0.2, 1.5, 0xf2e27a, 0.025);
+    g.add(eL, eR, stripe);
+    g.userData.stripe = stripe;
+    scene.add(g); segs.push(g);
+  }
+  const buildings = [];
+  const colors = [0xe8a87c, 0xd5cabd, 0x95b8d1, 0xb8e0d2, 0xeac4d5, 0xf6e7b4];
+  for (let i = 0; i < 36; i++) {
+    const h = 4 + Math.random() * 12;
+    const b = box(4 + Math.random() * 3, h, 4 + Math.random() * 3, colors[i % colors.length]);
+    b.position.y = h / 2;
+    b.userData = { d: i * 10, side: i % 2 ? 1 : -1, off: 22 + Math.random() * 8 };   // city skyline behind the stands
+    scene.add(b); buildings.push(b);
+  }
+  // Stands with a crowd, on both sides of the road
+  const stands = [];
+  for (let i = 0; i < STAND_COUNT; i++) {
+    for (const side of [-1, 1]) {
+      const s = buildStand();
+      s.userData.d = i * STAND_GAP + (side > 0 ? STAND_GAP / 2 : 0);
+      s.userData.side = side;
+      stands.push(s);
+    }
+  }
+  return { segs, buildings, stands };
+}
+
+// =====================================================
+//     CHARACTERS: each player picks one before the race
+//   "player" = the player's own color (orange / blue). Every animal also wears
+//   a scarf in the player's color, so you can tell them apart if both pick the same one.
+// =====================================================
+const CHARACTERS = [
+  { name: "Runner",  emoji: "🏃‍♀️", torso: "player", head: 0xffd9b8, legs: 0x2b4c7e, arms: "player", extra: "runner" },
+  { name: "Fox",     emoji: "🦊", torso: 0xe8782a, head: 0xe8782a, legs: 0x3a2418, arms: 0xe8782a, extra: "fox" },
+  { name: "Panda",   emoji: "🐼", torso: 0xf4f4f4, head: 0xf4f4f4, legs: 0x222222, arms: 0x222222, extra: "panda" },
+  { name: "Penguin", emoji: "🐧", torso: 0x23232b, head: 0x23232b, legs: 0xf2a33a, arms: 0x23232b, extra: "penguin" },
+  { name: "Frog",    emoji: "🐸", torso: 0x4caf50, head: 0x5cc95f, legs: 0x3c8f40, arms: 0x4caf50, extra: "frog" },
+  { name: "Robot",   emoji: "🤖", torso: 0x9aa3ad, head: 0xb8c0c8, legs: 0x6c757d, arms: 0x9aa3ad, extra: "robot" },
+];
+
+const sphere = (r, color) => new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10), mat(color));
+const cone = (r, h, color) => new THREE.Mesh(new THREE.ConeGeometry(r, h, 12), mat(color));
+
+// Builds one character. They all share the same skeleton (body, legs, arms)
+// so running, jumping, falling and celebrating work the same for every character.
+// The front of a character faces -z (down the road).
+function buildCharacter(id, ci) {
+  const c = CHARACTERS[ci];
+  const col = v => (v === "player" ? SHIRT[id] : v);
+  const runner = new THREE.Group();
+  scene.add(runner);
+  const body = new THREE.Group();           // everything that tips over when she falls
+  runner.add(body);
+
+  const torso = box(0.6, 0.75, 0.35, col(c.torso)); torso.position.y = 1.15;
+  const head = c.extra === "robot" ? box(0.45, 0.42, 0.42, c.head) : sphere(0.25, c.head);
+  head.position.y = 1.78;
+  body.add(torso, head);
+
+  function limb(lx, ly, w, len, color) {
+    const joint = new THREE.Group();
+    joint.position.set(lx, ly, 0);
+    const m = box(w, len, w, color); m.position.y = -len / 2;
+    joint.add(m); body.add(joint);
+    return joint;
+  }
+  const legL = limb(-0.16, 0.8, 0.22, 0.8, c.legs);
+  const legR = limb(0.16, 0.8, 0.22, 0.8, c.legs);
+  const armL = limb(-0.4, 1.48, 0.16, 0.62, col(c.arms));
+  const armR = limb(0.4, 1.48, 0.16, 0.62, col(c.arms));
+  const gunBody = box(0.14, 0.45, 0.16, 0x2b2b33); gunBody.position.y = -0.8;
+  const gunTip = box(0.08, 0.15, 0.08, 0xffe55c); gunTip.position.y = -1.08;
+  armR.add(gunBody, gunTip);
+
+  const add = (m, x, y, z) => { m.position.set(x, y, z); body.add(m); return m; };
+  if (c.extra === "runner") {
+    const hair = new THREE.Mesh(new THREE.SphereGeometry(0.27, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2), mat(0x3a2418));
+    add(hair, 0, 1.8, 0);
+    add(sphere(0.1, 0x3a2418), 0, 1.72, 0.26);                       // ponytail
+  }
+  if (c.extra === "fox") {
+    add(cone(0.09, 0.24, 0xe8782a), -0.13, 2.04, 0);                 // ears
+    add(cone(0.09, 0.24, 0xe8782a), 0.13, 2.04, 0);
+    add(sphere(0.12, 0xffffff), 0, 1.7, -0.2);                        // white snout
+    add(sphere(0.04, 0x111111), 0, 1.72, -0.32);                      // nose
+    const tail = add(cone(0.14, 0.7, 0xe8782a), 0, 0.95, 0.42); tail.rotation.x = -1.1;
+    add(sphere(0.1, 0xffffff), 0, 0.78, 0.72);                        // white tail tip
+  }
+  if (c.extra === "panda") {
+    add(sphere(0.09, 0x222222), -0.18, 1.99, 0);                      // ears
+    add(sphere(0.09, 0x222222), 0.18, 1.99, 0);
+    for (const ex of [-0.09, 0.09]) {                                 // eye patches
+      const patch = add(sphere(0.07, 0x222222), ex, 1.82, -0.2); patch.scale.set(1, 1.3, 0.5);
+    }
+    add(sphere(0.035, 0x222222), 0, 1.72, -0.25);                     // nose
+  }
+  if (c.extra === "penguin") {
+    add(box(0.42, 0.6, 0.05, 0xffffff), 0, 1.12, -0.18);              // white belly
+    add(sphere(0.12, 0xffffff), 0, 1.76, -0.14).scale.set(1.3, 1, 1); // white face
+    const beak = add(cone(0.06, 0.18, 0xf2a33a), 0, 1.74, -0.32); beak.rotation.x = -Math.PI / 2;
+    for (const ex of [-0.07, 0.07]) add(sphere(0.03, 0x111111), ex, 1.84, -0.24);
+  }
+  if (c.extra === "frog") {
+    for (const ex of [-0.13, 0.13]) {
+      add(sphere(0.1, 0x5cc95f), ex, 1.98, -0.06);                    // big eyes on top
+      add(sphere(0.06, 0xffffff), ex, 1.99, -0.13);
+      add(sphere(0.03, 0x111111), ex, 1.99, -0.18);
+    }
+    add(box(0.26, 0.03, 0.02, 0x2e6b30), 0, 1.68, -0.24);              // smile
+  }
+  if (c.extra === "robot") {
+    add(box(0.34, 0.08, 0.02, 0x3fe0ff), 0, 1.8, -0.22);              // glowing visor
+    add(new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.25, 6), mat(0x555555)), 0, 2.1, 0);
+    add(sphere(0.05, 0xff3b3b), 0, 2.24, 0);                          // antenna light
+    add(box(0.25, 0.18, 0.02, 0x3a3f45), 0, 1.2, -0.18);              // chest panel
+  }
+  if (c.extra !== "runner") add(box(0.64, 0.1, 0.39, SHIRT[id]), 0, 1.5, 0); // scarf in the player's color
+
+  return { runner, body, legL, legR, armL, armR };
+}
+
+// Swap a player's character (used on the character select screen)
+function setCharacter(p, ci) {
+  if (p.runner) scene.remove(p.runner);
+  p.charIndex = ci;
+  Object.assign(p, buildCharacter(p.id, ci));
+  p.armR.rotation.set(Math.PI / 2, 0, 0);
+  p.runner.position.x = p.x + (p.lat || 0);
+}
+
+function buildShadow() {
+  const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.5, 24),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35 }));
+  shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.03;
+  scene.add(shadow);
+  return shadow;
+}
+
+const players = {};
+for (const id of [1, 2]) {
+  const cam = new THREE.PerspectiveCamera(65, 2, 0.1, 220);
+  players[id] = Object.assign({ id, x: LANE_X[id], cam, bullets: [], roll: 0, offset: 0, lat: 0,
+                                minOffset: Infinity, lastBeat: 0, lastSeen: -1e9, port: 0, wasMB: false,
+                                shadow: buildShadow() },
+                              buildWorld(LANE_X[id]));
+  setCharacter(players[id], id === 1 ? 0 : 1);   // start: Player 1 = Runner, Player 2 = Fox
+}
+const charName = p => CHARACTERS[p.charIndex].emoji + " " + CHARACTERS[p.charIndex].name;
+
+function resetPlayer(p) {
+  for (const b of p.bullets) scene.remove(b.mesh);
+  Object.assign(p, { jumpY: 0, vy: 0, onGround: true, dist: 0, lat: 0, speed: BASE_SPEED,
+                     down: 0, falls: 0, boost: 0, hurt: 0, recoil: 0, time: 0, kills: 0, coins: 0,
+                     offroad: false, finished: false, finishTime: 0, ready: false, bullets: [] });
+  p.body.rotation.set(0, 0, 0);
+  p.runner.rotation.set(0, 0, 0);
+  p.armL.rotation.set(0, 0, 0);
+  p.armR.rotation.set(Math.PI / 2, 0, 0);
+  for (let i = 0; i < p.buildings.length; i++) p.buildings[i].userData.d = i * 10;
+  p.stands.forEach((s, i) => { s.userData.d = Math.floor(i / 2) * STAND_GAP + (s.userData.side > 0 ? STAND_GAP / 2 : 0); });
+}
+
+// x position on screen for something at distance d, "lat" meters from the middle of the road,
+// as seen by player p (her world is centered on the road where she is)
+const worldX = (p, d, lat) => p.x + center(d) - center(p.dist) + lat;
+
+// =====================================================
+//    THE COURSE: same obstacles in the same places for both players
+// =====================================================
+let course = [];
+
+function makeMesh(it) {
+  const g = new THREE.Group();
+  if (it.type === "wall" || it.type === "block") {
+    const w = it.type === "wall" ? 6 : 3;
+    const m = new THREE.MeshLambertMaterial({ color: 0xff8c1a, emissive: 0x000000 });
+    const b = new THREE.Mesh(new THREE.BoxGeometry(w, it.h, 0.4), m); b.position.y = it.h / 2;
+    const s = box(w + 0.02, 0.12, 0.42, 0xffffff); s.position.y = it.h * 0.6;
+    g.add(b, s); g.userData.glow = m;
+  } else if (it.type === "enemy") {
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.55, 1.4, 16), mat(0x8e44ad)); body.position.y = 0.7;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.38, 16, 12), mat(0x9b59d0)); head.position.y = 1.75;
+    const eye = new THREE.MeshBasicMaterial({ color: 0xff2020 });
+    for (const ex of [-0.14, 0.14]) {
+      const e = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), eye); e.position.set(ex, 1.8, 0.32); g.add(e);
+    }
+    g.add(body, head);
+  } else if (it.type === "coin") {
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.08, 20),
+      new THREE.MeshLambertMaterial({ color: 0xffd34d, emissive: 0x553300 }));
+    c.rotation.x = Math.PI / 2; c.position.y = 0.9; g.add(c);
+  } else if (it.type === "finish") {
+    for (const px of [-3.3, 3.3]) { const pole = box(0.25, 4, 0.25, 0xffffff); pole.position.set(px, 2, 0); g.add(pole); }
+    const banner = box(7, 0.9, 0.2, 0xe63946); banner.position.y = 3.7; g.add(banner);
+    for (let i = 0; i < 12; i++) {
+      const sq = box(0.5, 0.03, 0.8, i % 2 ? 0x111111 : 0xffffff); sq.position.set(-2.75 + i * 0.5, 0.03, 0); g.add(sq);
+    }
+  }
+  scene.add(g);
+  return g;
+}
+
+function newCourse() {
+  for (const it of course) for (const id of [1, 2]) if (it.mesh[id]) scene.remove(it.mesh[id]);
+  course = [];
+  let pos = 45;
+  while (pos < TRACK - 25) {
+    const r = Math.random();
+    let it;
+    if (r < 0.25)      it = { type: "wall", lat: 0 };                                     // full width: JUMP
+    else if (r < 0.45) it = { type: "block", lat: Math.random() < 0.5 ? -1.5 : 1.5 };      // half road: STEER around or jump
+    else if (r < 0.75) it = { type: "enemy", lat: (Math.random() * 2 - 1) * 1.6 };         // SHOOT it or steer around
+    else               it = { type: "coin", lat: (Math.random() * 2 - 1) * 2.2 };          // steer through it
+    Object.assign(it, { pos, h: 0.6 + Math.random() * 0.3, mesh: {}, done: {}, gone: {} });
+    course.push(it);
+    pos += 16 + Math.random() * 14;
+  }
+  course.push({ type: "finish", lat: 0, pos: TRACK, mesh: {}, done: {}, gone: {} });
+}
+
+// =====================================================
+//                    GAME STATE
+// =====================================================
+let state = "menu";   // menu -> countdown -> play -> celebrate -> over
+let countdown = 0, raceTime = 0, lockUntil = 0, winnerId = 0, celTime = 0, lastBeep = 4;
+let confetti = [];
+
+function newRace() {
+  newCourse();
+  for (const id of [1, 2]) resetPlayer(players[id]);
+  winnerId = 0; raceTime = 0; celTime = 0;
+  clearConfetti();
+  document.body.classList.remove("celebrate");
+}
+newRace();
+
+// =====================================================
+//        INPUT: micro:bit / keyboard -> here
+// =====================================================
+function onButton(id, btn) {
+  const p = players[id];
+  if (!p) return;
+
+  // Start screen / results screen: A = go to the character select screen
+  if (state === "menu" || state === "over") {
+    if (btn !== "A" || performance.now() < lockUntil) return;
+    newRace();
+    state = "select";
+    lockUntil = performance.now() + 300;   // so this same press doesn't also choose a character
+    showOverlay();
+    return;
+  }
+
+  // Character select: B = next character, A = choose it (then wait for the other player)
+  if (state === "select") {
+    if (performance.now() < lockUntil) return;
+    if (btn === "B" || btn === "next" || btn === "prev") {
+      if (p.ready) return;                 // already chose
+      const n = CHARACTERS.length;
+      setCharacter(p, (p.charIndex + (btn === "prev" ? n - 1 : 1)) % n);
+      Sound.sfx("tick");
+    }
+    if (btn === "A" && !p.ready) { p.ready = true; Sound.sfx("choose"); }
+    if (players[1].ready && players[2].ready) { state = "countdown"; countdown = 3; lastBeep = 4; }
+    showOverlay();
+    return;
+  }
+
+  // The race: A = jump, B = shoot
+  if (state !== "play" || p.finished || p.down > 0) return; // can't jump or shoot while lying on the ground
+  if (btn === "A") jump(p);
+  if (btn === "B") shoot(p);
+}
+
+function onTilt(id, roll) {
+  const p = players[id];
+  if (p) p.roll = INVERT_TILT ? -roll : roll;
+  const el = document.getElementById("tilt" + id);
+  if (el) el.style.left = (27 + Math.max(-27, Math.min(27, roll))) + "px";
+}
+
+// Every press jumps right away - also in the air
+function jump(p) {
+  Sound.sfx("jump");
+  if (p.onGround) {
+    p.vy = JUMP_V - GRAVITY * INPUT_LAG;
+    p.jumpY = JUMP_V * INPUT_LAG - GRAVITY * INPUT_LAG * INPUT_LAG / 2;
+    p.onGround = false;
+  } else if (AIR_JUMP > 0) {
+    p.vy = JUMP_V * AIR_JUMP;
+  }
+}
+
+// Every press shoots right away (the bullet flies straight along the road)
+function shoot(p) {
+  Sound.sfx("shoot");
+  p.recoil = 1;
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), new THREE.MeshBasicMaterial({ color: 0xfff27a }));
+  scene.add(m);
+  p.bullets.push({ mesh: m, z: -1.2, lat: p.lat + 0.4, y: 1.45 + p.jumpY });
+}
+
+// =====================================================
+//    WHO PLAYS WITH WHAT? (decided automatically)
+//   - a player whose micro:bit is talking to us = micro:bit
+//   - every other player = keyboard
+// =====================================================
+const hasMicrobit = id => performance.now() - players[id].lastSeen < 3000;
+
+// Which player does a keyboard key control?
+//   no micro:bit:     W A S D = Player 1,  arrows = Player 2  (two people on one keyboard)
+//   one micro:bit:    W A S D and arrows = the OTHER player (the one without a micro:bit)
+//   two micro:bits:   the keyboard does nothing
+function keyboardPlayer(set) {
+  const mb1 = hasMicrobit(1), mb2 = hasMicrobit(2);
+  if (mb1 && mb2) return 0;
+  if (mb1) return 2;
+  if (mb2) return 1;
+  return set === "wasd" ? 1 : 2;
+}
+
+// Uses the PHYSICAL key (e.code), so it works the same with a Hebrew or an English keyboard layout.
+//            key        set     action
+const KEYMAP = { KeyW: ["wasd", "A"], KeyS: ["wasd", "B"], KeyA: ["wasd", "L"], KeyD: ["wasd", "R"],
+                 ArrowUp: ["arrows", "A"], ArrowDown: ["arrows", "B"], ArrowLeft: ["arrows", "L"], ArrowRight: ["arrows", "R"] };
+const held = { 1: { L: false, R: false }, 2: { L: false, R: false } };
+
+document.addEventListener("keydown", e => {
+  const k = KEYMAP[e.code];
+  if (!k) return;
+  e.preventDefault();
+  const id = keyboardPlayer(k[0]);
+  if (!id) return;
+  const action = k[1];
+  // Start screen: any of your keys starts. Character select: left/right/down = change, up = choose
+  if (state === "menu" || state === "over") { if (!e.repeat) onButton(id, "A"); return; }
+  if (state === "select") {
+    if (!e.repeat) onButton(id, action === "L" ? "prev" : action === "R" ? "next" : action);
+    return;
+  }
+  if (action === "L" || action === "R") { held[id][action] = true; keyTilt(id); return; }
+  if (!e.repeat) onButton(id, action);
+});
+document.addEventListener("keyup", e => {
+  const k = KEYMAP[e.code];
+  if (!k || (k[1] !== "L" && k[1] !== "R")) return;
+  const id = keyboardPlayer(k[0]);
+  if (!id) return;
+  held[id][k[1]] = false; keyTilt(id);
+});
+function keyTilt(id) {
+  onTilt(id, (held[id].R ? 25 : 0) - (held[id].L ? 25 : 0));
+}
+
+// Label shown on screen for each player
+function controlLabel(id) {
+  if (hasMicrobit(id)) return "🎮 micro:bit";
+  const mb1 = hasMicrobit(1), mb2 = hasMicrobit(2);
+  if (mb1 || mb2) return "⌨️ keyboard (W A S D or arrows)";
+  return id === 1 ? "⌨️ keyboard (W A S D)" : "⌨️ keyboard (arrows)";
+}
+function readyHint(id) {
+  if (hasMicrobit(id)) return "A on the micro:bit";
+  const mb1 = hasMicrobit(1), mb2 = hasMicrobit(2);
+  if (mb1 || mb2) return "W or ↑";
+  return id === 1 ? "W" : "↑";
+}
+
+// =====================================================
+//                 UPDATE (game logic)
+// =====================================================
+// Ran into something: fall down, lie there, get up and keep running
+function hit(p, seconds, text) {
+  if (p.hurt > 0) return;
+  p.down = seconds;
+  p.hurt = seconds + 0.6;     // after getting up, a moment where you can't be hit again
+  p.falls++; p.boost = 0;
+  Sound.sfx("fall");
+  p.jumpY = 0; p.vy = 0; p.onGround = true;
+  flash(p.id); pop(p.id, text);
+}
+
+function updatePlayer(p, dt) {
+  if (p.finished) return;
+  p.time += dt;
+
+  // ---- Speed ----
+  let mult = 1;
+  if (p.down > 0) { mult = 0; p.down -= dt; if (p.down <= 0) pop(p.id, "GO!"); }
+  if (p.boost > 0) { mult *= BOOST_MULT; p.boost -= dt; }
+  if (!p.onGround) mult *= AIR_SLOW;
+  p.offroad = Math.abs(p.lat) > ROAD_HALF + 0.2;
+  if (p.offroad) mult *= OFFROAD_SLOW;
+  p.speed = BASE_SPEED * mult;
+  const move = p.speed * dt;
+  p.dist = Math.min(TRACK, p.dist + move);
+  if (p.hurt > 0) p.hurt -= dt;
+
+  // ---- Steering by tilt: the curve pushes you outward, your tilt brings you back ----
+  if (p.down <= 0) {
+    let t = p.roll - p.offset;
+    t = Math.abs(t) < DEAD_ZONE ? 0 : t - Math.sign(t) * DEAD_ZONE;
+    const tilt = Math.max(-1, Math.min(1, t / (MAX_TILT - DEAD_ZONE)));
+    p.lat += (tilt * STEER - curve(p.dist) * p.speed * p.speed * DRIFT) * dt;
+    p.lat = Math.max(-6, Math.min(6, p.lat));
+  }
+
+  // ---- Jump ----
+  if (!p.onGround) {
+    p.vy -= GRAVITY * dt;
+    p.jumpY += p.vy * dt;
+    if (p.jumpY > MAX_HEIGHT) { p.jumpY = MAX_HEIGHT; p.vy = Math.min(p.vy, 0); }
+    if (p.jumpY <= 0) { p.jumpY = 0; p.vy = 0; p.onGround = true; }
+  }
+
+  // ---- Course items ----
+  for (const it of course) {
+    const id = p.id;
+    if (it.gone[id]) continue;
+    const z = p.dist - it.pos;              // negative = still ahead
+    if (z < -150) continue;                 // too far ahead to see
+    if (!it.mesh[id]) it.mesh[id] = makeMesh(it);
+    const m = it.mesh[id];
+    m.position.set(worldX(p, it.pos, it.lat), it.type === "enemy" ? Math.abs(Math.sin(p.time * 6 + it.pos)) * 0.15 : 0, z);
+    m.rotation.y = -Math.atan(slope(it.pos));
+    if (it.type === "coin") m.children[0].rotation.z += dt * 4;
+    if (it.type === "wall" || it.type === "block") {
+      const timeToHit = -z / Math.max(1, p.speed);
+      m.userData.glow.emissive.setHex(timeToHit > 0.12 && timeToHit < 0.65 ? 0x886600 : 0x000000);
+    }
+
+    if (!it.done[id] && z > -0.3) {          // she reached it
+      it.done[id] = true;
+      const side = Math.abs(p.lat - it.lat);
+      if (it.type === "wall" && p.jumpY < it.h - 0.1) hit(p, FALL_BARRIER, "FALL!");
+      if (it.type === "block" && side < 1.8 && p.jumpY < it.h - 0.1) hit(p, FALL_BARRIER, "FALL!");
+      if (it.type === "enemy" && side < 0.9 && p.jumpY < 2.0) hit(p, FALL_ENEMY, "CAUGHT! -2s");
+      if (it.type === "coin" && side < 0.9 && p.jumpY < 1.5) {
+        p.coins++; p.boost = Math.max(p.boost, COIN_BOOST); pop(id, "+BOOST"); Sound.sfx("coin");
+        remove(it, id);
+      }
+    }
+    if (z > 9) remove(it, id);              // behind the camera
+  }
+
+  // ---- Bullets ----
+  for (const b of p.bullets) {
+    const back = b.z;
+    b.z -= BULLET_V * dt;
+    const d = p.dist - b.z;
+    b.mesh.position.set(worldX(p, d, b.lat), b.y, b.z);
+    for (const it of course) {
+      if (it.type !== "enemy" || it.gone[p.id] || it.done[p.id]) continue;
+      const ez = p.dist - it.pos;
+      if (ez <= back + 0.5 && ez >= b.z - 0.5 && Math.abs(b.lat - it.lat) < 1) {
+        it.done[p.id] = true; remove(it, p.id); b.dead = true;
+        p.kills++; p.boost = BOOST_TIME; pop(p.id, "BOOST!"); Sound.sfx("boost");
+        break;
+      }
+    }
+  }
+  p.bullets = p.bullets.filter(b => {
+    if (b.dead || b.z < -150) { scene.remove(b.mesh); return false; }
+    return true;
+  });
+
+  // ---- Finish line! ----
+  if (p.dist >= TRACK) {
+    p.finished = true; p.finishTime = raceTime;
+    if (!winnerId) startCelebration(p.id);
+  }
+}
+
+function remove(it, id) {
+  it.gone[id] = true;
+  if (it.mesh[id]) { scene.remove(it.mesh[id]); it.mesh[id] = null; }
+}
+
+function update(dt) {
+  if (state === "countdown") {
+    countdown -= dt;
+    if (Math.ceil(countdown) < lastBeep && countdown > 0) { lastBeep = Math.ceil(countdown); Sound.sfx("beep"); }
+    for (const id of [1, 2]) players[id].offset = players[id].roll; // "straight" = how you hold it now
+    showOverlay();
+    if (countdown <= 0) {
+      state = "play";
+      Sound.sfx("go");
+      players[1].ready = players[2].ready = false;
+      showOverlay();
+    }
+    return;
+  }
+  if (state === "celebrate" || state === "over") {
+    celTime += dt;
+    updateConfetti(dt);
+    if (state === "celebrate" && celTime > 4.5) {
+      state = "over"; lockUntil = performance.now() + 800;
+      showOverlay();
+    }
+    return;
+  }
+  if (state !== "play") return;
+  raceTime += dt;
+  for (const id of [1, 2]) updatePlayer(players[id], dt);
+}
+
+// Place everything in player p's world: road pieces, buildings, runner, camera
+function placeWorld(p) {
+  const base = Math.floor(p.dist / SEG) * SEG;
+  for (let i = 0; i < NSEG; i++) {
+    const d = base + i * SEG - 6 + SEG / 2;
+    const g = p.segs[i];
+    g.position.set(worldX(p, d, 0), 0, p.dist - d);
+    g.rotation.y = -Math.atan(slope(d));
+    g.userData.stripe.visible = Math.floor(d / SEG) % 2 === 0;
+  }
+  for (const b of p.buildings) {
+    const u = b.userData;
+    if (p.dist - u.d > 15) u.d += p.buildings.length * 10;
+    b.position.x = worldX(p, u.d, u.side * u.off);
+    b.position.z = p.dist - u.d;
+  }
+  // Stands follow the curves of the road and face it
+  const t = performance.now() / 1000;
+  const party = state === "celebrate" || state === "over";
+  for (const s of p.stands) {
+    const u = s.userData;
+    if (p.dist - u.d > 20) u.d += STAND_COUNT * STAND_GAP;   // passed behind you: move it far ahead
+    const z = p.dist - u.d;
+    s.position.set(worldX(p, u.d, u.side * STAND_OFF), 0, z);
+    s.rotation.y = -Math.atan(slope(u.d)) + (u.side < 0 ? Math.PI : 0);
+    const near = Math.abs(z) < 30;
+    cheer(s, t, party ? 0.45 : near && state === "play" ? 0.3 : 0.07);
+  }
+  p.runner.position.x = p.x + p.lat;
+  p.shadow.position.x = p.x + p.lat;
+}
+
+// Runner animation + camera behind her
+function animate(p, dt) {
+  placeWorld(p);
+  const running = state === "play" && !p.finished && p.down <= 0;
+  p.runner.position.y = p.jumpY;
+  if (!p.onGround) {
+    p.legL.rotation.x = 0.9; p.legR.rotation.x = -0.3; p.armL.rotation.x = -1.2;
+  } else if (running) {
+    const s = Math.sin(p.time * 13 * (p.speed / BASE_SPEED));
+    p.legL.rotation.x = s * 0.8; p.legR.rotation.x = -s * 0.8; p.armL.rotation.x = -s * 0.7;
+    p.runner.position.y = Math.abs(s) * 0.06;
+  } else if (!(state === "celebrate" || state === "over")) {
+    p.legL.rotation.x = p.legR.rotation.x = p.armL.rotation.x = 0;
+  }
+  if (!(winnerId === p.id && (state === "celebrate" || state === "over"))) {
+    p.recoil = Math.max(0, p.recoil - dt * 6);
+    p.armR.rotation.set(Math.PI / 2 + p.recoil * 0.4, 0, 0);
+    p.armL.rotation.z = 0;
+  }
+  // Falling: tips forward onto the ground, then gets back up
+  const target = p.down > 0.25 ? -1.45 : 0;
+  p.body.rotation.x += (target - p.body.rotation.x) * Math.min(1, dt * (target ? 12 : 8));
+  // Leans into the steering
+  p.runner.rotation.z = -Math.max(-0.25, Math.min(0.25, (p.roll - p.offset) / 120));
+  p.runner.visible = !(p.down <= 0 && p.hurt > 0 && Math.floor(p.hurt * 12) % 2);
+  const sc = 1 - Math.min(0.6, p.jumpY / 3);
+  p.shadow.scale.set(sc, sc, sc);
+
+  // Character select screen: ALL characters stand in a row facing you
+  if (state === "select") {
+    animateLineup(p);
+    return;
+  }
+  showLineup(p, false);
+  p.shadow.visible = true;
+  p.runner.rotation.y = 0;
+
+  const shake = p.hurt > p.down + 0.3 && p.down > 0 ? (Math.random() - 0.5) * 0.2 : 0;
+  p.cam.position.set(p.x + p.lat * 0.6 + shake, CAM_Y + p.jumpY * 0.35, CAM_Z);
+  p.cam.lookAt(worldX(p, p.dist + 14, 0) * 0.5 + (p.x + p.lat) * 0.5, 1.2 + p.jumpY * 0.2, -12);
+}
+
+// =====================================================
+//   CHARACTER LINEUP: all 6 characters side by side on the select screen
+//   The one you are on now: bigger, waving, with a glowing ring under her feet.
+//   After you choose: she jumps with her arms up.
+// =====================================================
+const LINEUP_GAP = 1.7;   // meters between characters
+
+function buildLineup(p) {
+  p.lineup = CHARACTERS.map((c, i) => {
+    const ch = buildCharacter(p.id, i);
+    ch.runner.position.set(p.x + (i - (CHARACTERS.length - 1) / 2) * LINEUP_GAP, 0, 0);
+    ch.armR.rotation.set(0, 0, 0.1);
+    return ch;
+  });
+  p.ring = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.75, 32),
+    new THREE.MeshBasicMaterial({ color: SHIRT[p.id], side: THREE.DoubleSide }));
+  p.ring.rotation.x = -Math.PI / 2;
+  p.ring.position.y = 0.04;
+  scene.add(p.ring);
+}
+
+function showLineup(p, on) {
+  if (!p.lineup) { if (!on) return; buildLineup(p); }
+  for (const ch of p.lineup) ch.runner.visible = on;
+  p.ring.visible = on;
+}
+
+function animateLineup(p) {
+  showLineup(p, true);
+  p.runner.visible = false;                 // the race character is hidden while choosing
+  p.shadow.visible = false;
+  const t = performance.now() / 1000;
+  p.lineup.forEach((ch, i) => {
+    const selected = i === p.charIndex;
+    const s = selected ? 1.25 : 0.9;
+    ch.runner.scale.set(s, s, s);
+    ch.runner.rotation.set(0, Math.PI + Math.sin(t * 1.5 + i) * 0.25, 0);
+    ch.legL.rotation.x = ch.legR.rotation.x = 0;
+    if (selected && p.ready) {              // chosen: happy jumps, arms up
+      ch.runner.position.y = Math.abs(Math.sin(t * 6)) * 0.35;
+      ch.armL.rotation.set(0, 0, -2.7);
+      ch.armR.rotation.set(0, 0, 2.7);
+    } else if (selected) {                  // on it now: waving
+      ch.runner.position.y = 0;
+      ch.armL.rotation.set(0, 0, -2.2 + Math.sin(t * 9) * 0.4);
+      ch.armR.rotation.set(0, 0, 0.1);
+    } else {                                // the others: small idle bounce
+      ch.runner.position.y = Math.abs(Math.sin(t * 2 + i)) * 0.05;
+      ch.armL.rotation.set(0, 0, -0.1);
+      ch.armR.rotation.set(0, 0, 0.1);
+    }
+  });
+  const sel = p.lineup[p.charIndex].runner;
+  p.ring.position.x = sel.position.x;
+  p.ring.scale.setScalar(1 + Math.sin(t * 5) * 0.08);   // the ring pulses
+
+  // Camera pulled back so the whole row fits
+  // (looking a bit high, so the characters stand in the lower part and the name box fits above them)
+  p.cam.position.set(p.x, 2.8, 8.5);
+  p.cam.lookAt(p.x, 2.2, 0);
+}
+
+// =====================================================
+//          WINNER CELEBRATION: zoom in, confetti, arms up
+// =====================================================
+const celCam = new THREE.PerspectiveCamera(55, 1, 0.1, 220);
+
+function startCelebration(id) {
+  winnerId = id;
+  state = "celebrate";
+  Sound.sfx("win"); Sound.sfx("ovation");   // fanfare + the whole stadium cheers for the winner
+  celTime = 0;
+  document.body.classList.add("celebrate");
+  const banner = document.getElementById("winBanner");
+  banner.innerHTML = "PLAYER " + id + " WINS! 🏆<div style='font-size:.45em'>" + charName(players[id]) + "</div>";
+  banner.style.color = SHIRT_CSS[id];
+  showOverlay();
+
+  const p = players[id];
+  const colors = [0xff4d6d, 0xffd34d, 0x3fb6ff, 0x2ecc71, 0xb36bff, 0xffffff, 0xff8c1a];
+  for (let i = 0; i < 260; i++) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.14, 0.24),
+      new THREE.MeshBasicMaterial({ color: colors[i % colors.length], side: THREE.DoubleSide }));
+    m.userData = { vx: (Math.random() - 0.5) * 1.5, vy: 1.5 + Math.random() * 2, spin: 2 + Math.random() * 6,
+                   sway: Math.random() * 6 };
+    m.position.set(p.x + p.lat + (Math.random() - 0.5) * 8, 3 + Math.random() * 7, (Math.random() - 0.5) * 8);
+    m.rotation.set(Math.random() * 6, Math.random() * 6, 0);
+    scene.add(m); confetti.push(m);
+  }
+}
+
+function updateConfetti(dt) {
+  if (!winnerId) return;
+  const p = players[winnerId];
+  for (const c of confetti) {
+    const u = c.userData;
+    c.position.y -= u.vy * dt;
+    c.position.x += (u.vx + Math.sin(celTime * 3 + u.sway) * 0.8) * dt;
+    c.rotation.x += u.spin * dt; c.rotation.y += u.spin * 0.7 * dt;
+    if (c.position.y < 0.05) {                  // back to the top
+      c.position.y = 6 + Math.random() * 3;
+      c.position.x = p.x + p.lat + (Math.random() - 0.5) * 8;
+    }
+  }
+}
+
+function clearConfetti() {
+  for (const c of confetti) scene.remove(c);
+  confetti = [];
+}
+
+// The winner: arms up, happy jumps. The camera swings around to her front and zooms in.
+function animateWinner(dt) {
+  const p = players[winnerId];
+  placeWorld(p);
+  p.body.rotation.x = 0;
+  p.runner.visible = true;
+  p.runner.rotation.z = 0;
+  p.runner.position.y = Math.abs(Math.sin(celTime * 6)) * 0.45;
+  p.shadow.scale.set(1, 1, 1);
+  const wave = Math.sin(celTime * 10) * 0.15;
+  p.armL.rotation.set(0, 0, -2.7 + wave);
+  p.armR.rotation.set(0, 0, 2.7 - wave);
+  p.legL.rotation.x = p.legR.rotation.x = 0;
+
+  const k = Math.min(1, celTime / 2.2);
+  const e = k * k * (3 - 2 * k);                // smooth start and stop
+  const angle = e * Math.PI;                    // from behind her (0) to in front of her (PI)
+  const radius = 6.5 - e * 3.3;                 // zoom in
+  const cx = p.x + p.lat, cy = 1.3 + p.runner.position.y * 0.3;
+  celCam.position.set(cx + Math.sin(angle) * radius * 0.35, 3.4 - e * 1.6, Math.cos(angle) * radius);
+  celCam.lookAt(cx, cy, 0);
+}
+
+// =====================================================
+//                   HUD / SCREENS
+// =====================================================
+const popTimers = {};
+function pop(id, text) {
+  const el = document.getElementById("pop" + id);
+  el.textContent = text; el.classList.add("show");
+  clearTimeout(popTimers[id]);
+  popTimers[id] = setTimeout(() => el.classList.remove("show"), 500);
+}
+function flash(id) {
+  const f = document.getElementById("flash" + id);
+  f.style.transition = "none"; f.style.opacity = 0.45;
+  requestAnimationFrame(() => { f.style.transition = "opacity .4s"; f.style.opacity = 0; });
+}
+
+function updateHud() {
+  for (const id of [1, 2]) {
+    const p = players[id];
+    let extra = "";
+    if (p.finished) extra = "FINISHED " + p.finishTime.toFixed(1) + "s";
+    else if (p.down > 0) extra = "getting up...";
+    else if (p.offroad) extra = "OFF ROAD - tilt back!";
+    else if (p.boost > 0) extra = "⚡ BOOST";
+    document.getElementById("hud" + id).innerHTML =
+      `<div class="name" style="color:${SHIRT_CSS[id]}">Player ${id} ${hasMicrobit(id) ? "🎮" : "⌨️"} · ${charName(p)}</div>
+       <div class="info">${Math.floor(p.dist)} / ${TRACK} m · falls: ${p.falls}</div><div class="extra">${extra}</div>`;
+    document.getElementById("dot" + id).style.left = (100 * Math.min(1, p.dist / TRACK)) + "%";
+  }
+}
+
+function showOverlay() {
+  const o = document.getElementById("overlay");
+  o.classList.remove("end", "select");
+  document.body.classList.toggle("selecting", state === "select");
+  if (state === "play" || state === "celebrate") { o.classList.add("hidden"); return; }
+  o.classList.remove("hidden");
+  const r = id => `<div>Player ${id} · ${hasMicrobit(id) ? "🎮" : "⌨️"}<br>${readyHint(id)}</div>`;
+
+  if (state === "select") {
+    o.classList.add("select");
+    const panel = id => {
+      const p = players[id];
+      const hint = p.ready ? "Waiting for the other player..."
+        : hasMicrobit(id) ? "B = next character · A = choose"
+        : "← → (or A D) = change · ↑ (or W) = choose";
+      return `<div class="selbox p${id} ${p.ready ? "done" : ""}" style="${p.ready ? "" : "border-color:" + SHIRT_CSS[id]}">
+        <div class="who">PLAYER ${id} ${hasMicrobit(id) ? "🎮" : "⌨️"}</div>
+        <div class="char">${charName(p)}${p.ready ? " ✓" : ""}</div>
+        <div class="row">${CHARACTERS.map((c, i) => `<span class="${i === p.charIndex ? "on" : ""}">${c.emoji}</span>`).join("")}</div>
+        <div class="hint">${hint}</div></div>`;
+    };
+    o.innerHTML = `<div class="seltitle">CHOOSE YOUR CHARACTER</div>${panel(1)}${panel(2)}`;
+    return;
+  }
+
+  if (state === "menu") {
+    o.innerHTML = `<h2>RACE 3D</h2>
+      <p>First to cross the finish line 🏁 (${TRACK / 1000} km) wins!</p>
+      <p>Hold the micro:bit like a steering wheel - <b>TILT</b> to stay on the winding road (grass = slow)</p>
+      <p style="opacity:.8">⌨️ Keyboard player: ←/→ or A/D = steer · ↑ or W = jump · ↓ or S = shoot</p>
+      <p><b style="color:#ff8c1a">Orange barrier</b> = A to JUMP (it glows when it's time) · half barriers: steer around them</p>
+      <p><b style="color:#c08ae0">Purple enemy</b> = B to SHOOT it → ⚡ BOOST · run into it = 2 seconds on the ground!</p>
+      <p><b style="color:#ffd34d">Gold coin</b> = steer through it → small boost</p>
+      <p>Hit a barrier = you fall and lose 1 second · jumping all the time makes you slower</p>
+      <p style="margin-top:16px; color:#ffd34d; font-weight:800; font-size:22px">Press A to choose your characters</p>
+      <p style="opacity:.8">🔊 Click the screen once to turn on the music · M = sound on/off</p>
+      <div class="ready">${r(1)}${r(2)}</div>`;
+  } else if (state === "countdown") {
+    o.innerHTML = `<h2 style="font-size:120px">${Math.ceil(countdown)}</h2><p>Hold the micro:bit straight...</p>`;
+  } else if (state === "over") {
+    o.classList.add("end");
+    const line = id => {
+      const p = players[id];
+      const result = p.finished ? "finished in " + p.finishTime.toFixed(1) + "s" : (TRACK - Math.floor(p.dist)) + " m behind";
+      return `<p>Player ${id} (${charName(p)}): ${result} · falls ${p.falls} · enemies ${p.kills} · coins ${p.coins}</p>`;
+    };
+    o.innerHTML = `${line(1)}${line(2)}
+      <p style="margin-top:12px; color:#ffd34d; font-weight:800">Press A for a new race (and choose characters again)</p>`;
+  }
+}
+showOverlay();
+
+// =====================================================
+//                     GAME LOOP
+// =====================================================
+let last = performance.now(), fpsFrames = 0, fpsTime = 0;
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  fpsFrames++; fpsTime += dt;
+  if (fpsTime >= 1) {
+    document.getElementById("dbgFps").textContent = "FPS: " + fpsFrames + (fpsFrames < 35 ? " (slow computer!)" : "");
+    fpsFrames = 0; fpsTime = 0;
+  }
+  update(dt);
+  updateHud();
+
+  const W = innerWidth, H = innerHeight;
+  if ((state === "celebrate" || state === "over") && winnerId) {
+    // One big screen on the winner
+    animateWinner(dt);
+    renderer.setViewport(0, 0, W, H);
+    renderer.setScissor(0, 0, W, H);
+    celCam.aspect = W / H;
+    celCam.updateProjectionMatrix();
+    renderer.render(scene, celCam);
+  } else {
+    // Split screen: Player 1 on top, Player 2 on the bottom
+    const half = Math.floor(H / 2);
+    for (const id of [1, 2]) {
+      const p = players[id];
+      animate(p, dt);
+      const y = id === 1 ? H - half : 0;
+      renderer.setViewport(0, y, W, half);
+      renderer.setScissor(0, y, W, half);
+      p.cam.aspect = W / half;
+      p.cam.updateProjectionMatrix();
+      renderer.render(scene, p.cam);
+    }
+  }
+  checkSignals();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// =====================================================
+//     micro:bit CONNECTION (Web Serial) - up to 2 micro:bits
+// Messages from the MakeCode code (version 6):
+//   "P1 A 12345" / "P2 B 12345" = button pressed (+ micro:bit clock in ms)
+//   "P1 R -12"                  = tilt in degrees (about 30 times a second)
+//   "HB 6 1 12345"              = heartbeat: version, player number, clock
+// =====================================================
+const statusEl = document.getElementById("status");
+let connected = 0;
+
+function lamp(id, btn) {
+  const el = document.getElementById("lamp" + id + btn);
+  if (!el) return;
+  el.classList.add("on");
+  setTimeout(() => el.classList.remove("on"), 90);
+}
+
+function measure(p, mbMillis) {
+  const offset = performance.now() - mbMillis;
+  if (offset < p.minOffset) p.minOffset = offset;
+  return Math.round(offset - p.minOffset);
+}
+
+// Every message says which player it's from ("P1 ..." / "P2 ... " / "HB 6 2 ...").
+// That's how the game knows which player has a micro:bit - and the other one gets the keyboard.
+function seen(id, portNo) {
+  const p = players[id];
+  // Two different micro:bits both say they are the same player = they have the same code!
+  if (p.port && p.port !== portNo && hasMicrobit(id)) {
+    statusEl.textContent = `⚠️ Both micro:bits are Player ${id}! Download race-player${id === 1 ? 2 : 1}.js to one of them.`;
+  }
+  p.port = portNo;
+  p.lastSeen = performance.now();
+}
+
+function handleLine(msg, portNo) {
+  let m = msg.match(/^P([12]) R (-?\d+)$/);
+  if (m) { seen(Number(m[1]), portNo); onTilt(Number(m[1]), Number(m[2])); return; }
+  m = msg.match(/^P([12]) (A|B)(?: (\d+))?$/);
+  if (m) {
+    const id = Number(m[1]);
+    seen(id, portNo);
+    onButton(id, m[2]);               // react FIRST
+    lamp(id, m[2]);
+    if (m[3]) {
+      const lag = measure(players[id], Number(m[3]));
+      document.getElementById("dbg" + id).textContent = `P${id}: micro:bit ✓ delay ${lag}ms${lag > 40 ? " (slow!)" : ""}`;
+    }
+    return;
+  }
+  m = msg.match(/^HB (\S+) ([12]) (\d+)$/);
+  if (m) {
+    const p = players[Number(m[2])];
+    seen(p.id, portNo);
+    p.lastBeat = performance.now();
+    measure(p, Number(m[3]));
+    const el = document.getElementById("dbg" + p.id);
+    if (m[1] !== MB_VERSION) el.textContent = `P${p.id}: OLD code v${m[1]} - download v${MB_VERSION}!`;
+    else if (!/delay/.test(el.textContent)) el.textContent = `P${p.id}: micro:bit v${m[1]} ✓`;
+  }
+}
+
+function checkSignals() {
+  let changed = false;
+  for (const id of [1, 2]) {
+    const p = players[id];
+    const mb = hasMicrobit(id);
+    if (mb !== p.wasMB) {                 // a micro:bit appeared or disappeared for this player
+      p.wasMB = mb; changed = true;
+      held[id].L = held[id].R = false;
+      if (!mb) onTilt(id, 0);             // stop steering when the micro:bit is gone
+    }
+    if (!mb) document.getElementById("dbg" + id).textContent = `P${id}: ${controlLabel(id)}`;
+  }
+  if (changed) {
+    const n = [1, 2].filter(hasMicrobit).length;
+    statusEl.textContent = n === 0 ? "No micro:bit · both players on the keyboard (P1: W A S D · P2: arrows)"
+      : n === 1 ? `Player ${hasMicrobit(1) ? 1 : 2} = micro:bit ✓ · Player ${hasMicrobit(1) ? 2 : 1} = keyboard (W A S D or arrows)`
+      : "Both players on micro:bits ✓";
+    showOverlay();
+  }
+}
+
+// Sound buttons
+const soundBtn = document.getElementById("soundBtn");
+function toggleSound() {
+  Sound.init();
+  soundBtn.textContent = Sound.toggle() ? "🔊 Sound" : "🔇 Muted";
+  soundBtn.blur();
+}
+soundBtn.onclick = toggleSound;
+document.addEventListener("keydown", e => { if (e.code === "KeyM" && !e.repeat) toggleSound(); });
+document.getElementById("musicFile").onchange = e => {
+  const f = e.target.files[0];
+  if (f) { Sound.useFile(f); statusEl.textContent = "🎵 Playing: " + f.name; }
+};
+
+document.getElementById("connectBtn").onclick = async () => {
+  document.getElementById("connectBtn").blur();   // so keyboard keys go to the game, not to the button
+  Sound.init();                                    // clicking Connect also turns the sound on
+  if (!("serial" in navigator)) { alert("Please open this file in Chrome or Edge"); return; }
+  try {
+    const port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200, bufferSize: 255 });
+    const portNo = ++connected;
+    statusEl.textContent = "Connected ✓ · waiting for the micro:bit to say which player it is...";
+    const reader = port.readable.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let i;
+      while ((i = buffer.indexOf("\n")) >= 0) {
+        const msg = buffer.slice(0, i).trim();
+        buffer = buffer.slice(i + 1);
+        if (msg) handleLine(msg, portNo);
+      }
+    }
+  } catch (err) {
+    statusEl.textContent = "Connection failed: " + err.message +
+      (String(err.message).toLowerCase().includes("open") ? " (close MakeCode, or this micro:bit is already connected)" : "");
+  }
+};
+</script>
+</body>
+</html>
